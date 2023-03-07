@@ -23,6 +23,8 @@ export const backgroundClip: IPropertyListDescriptor<BackgroundClip> = {
                         return BACKGROUND_CLIP.PADDING_BOX;
                     case 'content-box':
                         return BACKGROUND_CLIP.CONTENT_BOX;
+                    case 'text':
+                        return BACKGROUND_CLIP.TEXT;
                 }
             }
             return BACKGROUND_CLIP.BORDER_BOX;
