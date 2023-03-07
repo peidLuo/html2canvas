@@ -4,7 +4,8 @@ import {Context} from '../../core/context';
 export const enum BACKGROUND_CLIP {
     BORDER_BOX = 0,
     PADDING_BOX = 1,
-    CONTENT_BOX = 2
+    CONTENT_BOX = 2,
+    TEXT = 3
 }
 
 export type BackgroundClip = BACKGROUND_CLIP[];

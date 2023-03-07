@@ -184,11 +184,48 @@ export class CanvasRenderer extends Renderer {
         const {baseline, middle} = this.fontMetrics.getMetrics(fontFamily, fontSize);
         const paintOrder = styles.paintOrder;
 
+        let adorWidth = 0;
+        for (let xnwi = 0; xnwi < text.textBounds.length; xnwi++) {
+            adorWidth += text.textBounds[xnwi].bounds.width;
+        }
+        const adorLeft = text.textBounds[0].bounds.left;
+        const adorTop = text.textBounds[0].bounds.top;
+        const adorHeight = text.textBounds[0].bounds.height;
+        this.ctx.font = font;
+
         text.textBounds.forEach((text) => {
             paintOrder.forEach((paintOrderLayer) => {
                 switch (paintOrderLayer) {
                     case PAINT_ORDER_LAYER.FILL:
-                        this.ctx.fillStyle = asString(styles.color);
+                        const bgImage = styles.backgroundImage[0];
+                        if (styles.backgroundClip[0] == BACKGROUND_CLIP.TEXT && isLinearGradient(bgImage)) {
+                            if (styles.backgroundImage[0] === undefined) {
+                                this.ctx.fillStyle = asString(styles.backgroundColor);
+                            } else {
+                                const [lineLength, x0, x1, y0, y1] = calculateGradientDirection(
+                                    bgImage.angle,
+                                    adorWidth,
+                                    adorHeight
+                                );
+
+                                const canvas = document.createElement('canvas');
+                                canvas.width = adorWidth;
+                                canvas.height = adorHeight;
+                                const xctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+                                const gradient = xctx.createLinearGradient(
+                                    adorLeft + x0,
+                                    adorTop + y0,
+                                    adorLeft + x1,
+                                    adorTop + y1
+                                );
+                                processColorStops(bgImage.stops, lineLength).forEach((colorStop) =>
+                                    gradient.addColorStop(colorStop.stop, asString(colorStop.color))
+                                );
+                                this.ctx.fillStyle = gradient;
+                            }
+                        } else {
+                            this.ctx.fillStyle = asString(styles.color);
+                        }
                         this.renderTextWithLetterSpacing(text, styles.letterSpacing, baseline);
                         const textShadows: TextShadow = styles.textShadow;
 
@@ -272,6 +309,22 @@ export class CanvasRenderer extends Renderer {
     ): void {
         if (image && container.intrinsicWidth > 0 && container.intrinsicHeight > 0) {
             const box = contentBox(container);
+
+            let newWidth: number;
+            let newHeight: number;
+            let newX = box.left;
+            let newY = box.top;
+
+            if (container.intrinsicWidth / box.width < container.intrinsicHeight / box.height) {
+                newWidth = box.width;
+                newHeight = container.intrinsicHeight * (box.width / container.intrinsicWidth);
+                newY = box.top + (box.height - newHeight) / 2;
+            } else {
+                newWidth = container.intrinsicWidth * (box.height / container.intrinsicHeight);
+                newHeight = box.height;
+                newX = box.left + (box.width - newWidth) / 2;
+            }
+
             const path = calculatePaddingBoxPath(curves);
             this.path(path);
             this.ctx.save();
@@ -282,10 +335,10 @@ export class CanvasRenderer extends Renderer {
                 0,
                 container.intrinsicWidth,
                 container.intrinsicHeight,
-                box.left,
-                box.top,
-                box.width,
-                box.height
+                newX,
+                newY,
+                newWidth,
+                newHeight
             );
             this.ctx.restore();
         }
@@ -604,6 +657,19 @@ export class CanvasRenderer extends Renderer {
                         this.resizeImage(image, width, height),
                         'repeat'
                     ) as CanvasPattern;
+                    this.renderRepeat(path, pattern, x, y);
+                }
+            } else if (container.styles.backgroundClip[0] == BACKGROUND_CLIP.TEXT) {
+                const [path, x, y, width, height] = calculateBackgroundRendering(container, index, [null, null, null]);
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+                ctx.globalAlpha = 0;
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, width, height);
+                if (width > 0 && height > 0) {
+                    const pattern = this.ctx.createPattern(canvas, 'repeat') as CanvasPattern;
                     this.renderRepeat(path, pattern, x, y);
                 }
             } else if (isLinearGradient(backgroundImage)) {
@@ -928,6 +994,8 @@ const calculateBackgroundCurvedPaintingArea = (clip: BACKGROUND_CLIP, curves: Bo
         case BACKGROUND_CLIP.BORDER_BOX:
             return calculateBorderBoxPath(curves);
         case BACKGROUND_CLIP.CONTENT_BOX:
+            return calculateContentBoxPath(curves);
+        case BACKGROUND_CLIP.TEXT:
             return calculateContentBoxPath(curves);
         case BACKGROUND_CLIP.PADDING_BOX:
         default:
